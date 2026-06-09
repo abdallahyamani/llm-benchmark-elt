@@ -1,0 +1,6 @@
+requests==2.32.3
+python-dotenv==1.0.1
+pandas==2.2.3
+pyarrow==18.1.0
+pyspark==3.5.4
+delta-spark==3.3.0
