@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from delta import DeltaTable
 from deltalake import write_deltalake
 from pyspark.sql import DataFrame, SparkSession
 
@@ -23,7 +24,6 @@ def write_to_delta(df: DataFrame, silver_dir: Path, partition_col: str = "snapsh
             pandas_df,
             mode="overwrite",
             partition_by=[partition_col],
-            overwrite_schema=True,
         )
     except Exception as exc:
         raise RuntimeError(
@@ -48,9 +48,8 @@ def verify_delta_table(silver_dir: Path, spark: SparkSession) -> dict:
     partition_count = df.select("snapshot_date").distinct().count()
 
     # Retrieve Delta history
-    history_df = spark.sql(
-        f"DESCRIBE HISTORY delta.`{table_path}`"
-    ).select("version", "timestamp", "operation")
+    delta_table = DeltaTable.forPath(spark, table_path)
+    history_df = delta_table.history().select("version", "timestamp", "operation")
     history = [row.asDict() for row in history_df.collect()]
 
     logger.info(
