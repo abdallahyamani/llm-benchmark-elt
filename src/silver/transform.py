@@ -1,5 +1,3 @@
-"""Silver layer transformation logic."""
-
 import logging
 from pathlib import Path
 
@@ -57,6 +55,10 @@ def transform(parquet_path: Path, spark: SparkSession) -> DataFrame:
     # Rename columns for Silver layer clarity
     df = df.withColumnRenamed("model_slug", "model_name")
     df = df.withColumnRenamed("creator_slug", "vendor")
+    df = df.withColumnRenamed("eval_artificial_analysis_intelligence_index", "analysis_ai_index")
+    df = df.withColumnRenamed("median_output_tokens_per_second", "output_tokens_per_sec")
+    df = df.withColumnRenamed("price_1m_input_tokens", "input_1m_price")
+    df = df.withColumnRenamed("price_1m_output_tokens", "output_1m_price")
 
     logger.info("Silver transform complete — %d rows produced", df.count())
     return df

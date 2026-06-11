@@ -22,10 +22,12 @@ def load_config() -> dict:
     # Resolve output directories
     bronze_dir = ROOT_DIR / "data" / "bronze"
     silver_dir = ROOT_DIR / "data" / "silver"
+    gold_dir = ROOT_DIR / "data" / "gold"
 
     # Create directories if they don't exist
     bronze_dir.mkdir(parents=True, exist_ok=True)
     silver_dir.mkdir(parents=True, exist_ok=True)
+    gold_dir.mkdir(parents=True, exist_ok=True)
 
     # Compute snapshot date
     snapshot_date = date.today().isoformat()
@@ -35,5 +37,6 @@ def load_config() -> dict:
         "api_key": api_key,
         "bronze_dir": bronze_dir,
         "silver_dir": silver_dir,
+        "gold_dir": gold_dir,
         "snapshot_date": snapshot_date,
     }
