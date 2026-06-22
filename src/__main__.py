@@ -12,6 +12,8 @@ from src.core.spark_session import get_or_create_spark
 from src.bronze.ingest import fetch_models, flatten_data, save_raw
 from src.silver.transform import transform
 from src.silver.write_delta import write_to_delta, verify_delta_table
+from src.gold.transform import compute_model_rankings, compute_model_trends
+from src.gold.write_delta import write_gold_table
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,22 @@ def _process_silver(parquet_path: Path, config: dict, spark) -> dict:
     return summary
 
 
+def _process_gold(config: dict, spark) -> None:
+    silver_df = spark.read.format("delta").load(str(config["silver_dir"] / "models"))
+    snapshot_date = config["snapshot_date"]
+    snapshot_df = silver_df.filter(silver_df["snapshot_date"] == snapshot_date)
+
+    if snapshot_df.count() == 0:
+        logger.info("Gold build skipped — Silver snapshot %s contains 0 rows", snapshot_date)
+        return
+
+    rankings = compute_model_rankings(snapshot_df, snapshot_date)
+    write_gold_table(rankings, config["gold_dir"], "model_leaderboard")
+
+    trends = compute_model_trends(silver_df)
+    write_gold_table(trends, config["gold_dir"], "model_trends")
+
+
 def main():
     configure_logging()
 
@@ -52,8 +70,9 @@ def main():
 
         parquet_path = _process_bronze(config)
         summary = _process_silver(parquet_path, config, spark)
-
         logger.info("Verification summary: %s", summary)
+
+        _process_gold(config, spark)
     except Exception as exc:
         logger.error("Pipeline failed — %s", exc, exc_info=True)
         raise
