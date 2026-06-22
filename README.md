@@ -62,17 +62,7 @@ Get a key from [Artificial Analysis](https://artificialanalysis.ai/login).
 
 ## Usage
 
-CLI (single run — Bronze → Silver → Gold):
-```bash
-python -m src
-```
-
-Notebook (interactive):
-```bash
-jupyter notebook notebooks/pipeline_simulation.ipynb
-```
-
-Airflow (daily scheduled):
+Daily scheduled run:
 ```bash
 docker compose up airflow-init   # one-time: migrate DB + create admin user
 docker compose up -d             # start webserver + scheduler
