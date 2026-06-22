@@ -1,9 +1,12 @@
 import logging
 from pathlib import Path
 
+import pyarrow as pa
 from delta import DeltaTable
 from deltalake import write_deltalake
 from pyspark.sql import DataFrame, SparkSession
+
+from src.core.arrow import spark_to_arrow_schema
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +21,16 @@ def write_to_delta(df: DataFrame, silver_dir: Path, partition_col: str = "snapsh
     table_path = str(silver_dir / "models")
 
     try:
-        pandas_df = df.toPandas()
+        arrow_table = pa.Table.from_pandas(
+            df.toPandas(),
+            schema=spark_to_arrow_schema(df.schema),
+            preserve_index=False,
+        )
         write_deltalake(
             table_path,
-            pandas_df,
+            arrow_table,
             mode="overwrite",
+            schema_mode="overwrite",
             partition_by=[partition_col],
         )
     except Exception as exc:

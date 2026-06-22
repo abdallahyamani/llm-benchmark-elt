@@ -1,7 +1,9 @@
 import logging
 from pathlib import Path
+import pyarrow as pa
 from deltalake import write_deltalake
 from pyspark.sql import DataFrame
+from src.core.arrow import spark_to_arrow_schema
 from src.gold.schemas import MODEL_LEADERBOARD_SCHEMA, MODEL_TRENDS_SCHEMA
 
 logger = logging.getLogger(__name__)
@@ -68,11 +70,16 @@ def write_gold_table(
     table_path = str(gold_dir / table_name)
 
     try:
-        pandas_df = df.toPandas()
+        arrow_table = pa.Table.from_pandas(
+            df.toPandas(),
+            schema=spark_to_arrow_schema(df.schema),
+            preserve_index=False,
+        )
         write_deltalake(
             table_path,
-            pandas_df,
+            arrow_table,
             mode="overwrite",
+            schema_mode="overwrite",
             partition_by=[partition_col],
         )
     except Exception as exc:
