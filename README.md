@@ -25,6 +25,18 @@ Each pipeline run captures a daily snapshot. Delta Lake preserves historical sna
 - **`model_leaderboard`** — one row per model for the snapshot, ranked by a composite score that blends intelligence (50%), speed (30%), and price (20%) after min-max normalization. Also includes cost-efficiency columns: average price per 1M tokens, intelligence-per-dollar, a cost tier (budget / mid / premium based on price percentiles), and an efficiency rank. Only models with all scoring metrics present are ranked.
 - **`model_trends`** — per-model metric deltas (intelligence, speed, price) between each snapshot and the immediately preceding one, with both current and previous values retained for context.
 
+### How "Best Model" Is Defined (and Why It Changes)
+
+The leaderboard scores each model as `intelligence (50%) + speed (30%) + price (20%)`, so rank 1 is the best *all-rounder under those weights*. It also exposes `efficiency_rank` (intelligence per dollar) as a separate "best value" lens. Reweighting would change the winner — a speed-optimized model can outrank a smarter, pricier one.
+
+A few important properties of the ranking:
+
+- **The leaderboard is per-snapshot, not cumulative.** Each day's ranking is computed only from that day's models. Ingesting more daily snapshots adds new partitions and feeds `model_trends`; it does not retroactively change a past day's leaderboard.
+- **Scores are relative to the day's field.** Metrics are min-max normalized against the min/max of the models present in that snapshot, and cost tiers use that snapshot's price percentiles. So a model's rank can shift even when its own metrics are unchanged — simply because the competing set changed (a new model entered, or one was dropped).
+- **Normalization is outlier-sensitive.** A single extreme model (very cheap, or very fast) stretches the range and compresses everyone else's normalized scores. As the model pool grows, a more robust scheme (percentile rank, z-score with clipping, or log-scaled price) would stabilize the scores.
+
+In short: the leaderboard answers "best relative to today's field," and `model_trends` is what lets you watch that ranking move over time.
+
 ## Why Delta Lake
 
 The Silver and Gold layers use Delta Lake:
