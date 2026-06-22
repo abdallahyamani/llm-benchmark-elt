@@ -1,16 +1,16 @@
 # LLM Benchmark ELT
 
-A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial Analysis API, stores raw snapshots in a Bronze layer, and produces a cleaned Delta Lake Silver table. Orchestrated with Apache Airflow.
+A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial Analysis API, stores raw snapshots in a Bronze layer, produces a cleaned Delta Lake Silver table, and builds Gold analytics tables (a scored model leaderboard and snapshot-over-snapshot trends). Orchestrated with Apache Airflow.
 
 ## How It Works
 
-Airflow triggers daily at midnight UTC → extracts model data (intelligence scores, latency, pricing) from the API → saves raw JSON + flattened Parquet to Bronze → PySpark applies cleaning rules (dedup, type casting, zero-to-null for sentinel values) → writes to a partitioned Delta Lake table → verifies row counts and partition integrity.
+Airflow triggers daily at midnight UTC → extracts model data (intelligence scores, latency, pricing) from the API → saves raw JSON + flattened Parquet to Bronze → PySpark applies cleaning rules (dedup, type casting, zero-to-null for sentinel values, column renaming) → writes to a partitioned Delta Lake Silver table → verifies row counts and partition integrity → builds Gold analytics tables (model leaderboard + trends) → runs a sanity check on the Gold output.
 
 Each pipeline run captures a daily snapshot. Delta Lake preserves historical snapshots with partition-scoped overwrites and time travel.
 
 ## Data Source
 
-[Artificial Analysis API](https://artificialanalysis.ai/api-reference) — independent benchmarks of 500+ LLM models covering intelligence evaluations, output speed, latency, and pricing.
+[Artificial Analysis API](https://artificialanalysis.ai/api-reference) — benchmarks of 500+ LLM models covering intelligence evaluations, output speed, latency, and pricing.
 
 ## Pipeline Layers
 
@@ -18,16 +18,22 @@ Each pipeline run captures a daily snapshot. Delta Lake preserves historical sna
 |-------|---------|----------|
 | Bronze | `data/bronze/` | Raw JSON (`raw_YYYY-MM-DD.json`) + flattened Parquet (`models_YYYY-MM-DD.parquet`) |
 | Silver | `data/silver/models/` | Delta Lake table partitioned by `snapshot_date`, cleaned and typed |
+| Gold | `data/gold/model_leaderboard/`, `data/gold/model_trends/` | Delta Lake analytics tables partitioned by `snapshot_date` |
+
+### Gold Tables
+
+- **`model_leaderboard`** — one row per model for the snapshot, ranked by a composite score that blends intelligence (50%), speed (30%), and price (20%) after min-max normalization. Also includes cost-efficiency columns: average price per 1M tokens, intelligence-per-dollar, a cost tier (budget / mid / premium based on price percentiles), and an efficiency rank. Only models with all scoring metrics present are ranked.
+- **`model_trends`** — per-model metric deltas (intelligence, speed, price) between each snapshot and the immediately preceding one, with both current and previous values retained for context.
 
 ## Why Delta Lake
 
-The Silver layer uses Delta Lake instead of plain Parquet for several reasons:
+The Silver and Gold layers use Delta Lake:
 
-- **Partition-scoped overwrites** — each daily run only replaces its own `snapshot_date` partition, preserving all historical data untouched
+- **Partition-scoped overwrites** — each daily run only replaces its own `snapshot_date` partition, preserving all historical data
 - **ACID transactions** — writes either fully succeed or fully roll back, no partial/corrupt state
 - **Time travel** — query any previous version of the table to see how benchmarks looked on a past date
 - **Schema evolution** — when the API adds new evaluation metrics, Delta handles new columns without breaking existing queries
-- **Transaction log** — every write is tracked with version, timestamp, and operation type for full auditability
+- **Transaction log** — every write is tracked with version, timestamp, and operation type
 
 ## Setup
 
@@ -44,7 +50,7 @@ Get a key from [Artificial Analysis](https://artificialanalysis.ai/login).
 
 ## Usage
 
-CLI (single run):
+CLI (single run — Bronze → Silver → Gold):
 ```bash
 python -m src
 ```
@@ -58,34 +64,42 @@ Airflow (daily scheduled):
 ```bash
 docker compose up airflow-init   # one-time: migrate DB + create admin user
 docker compose up -d             # start webserver + scheduler
-# UI at http://localhost:8080 (admin/admin)
 ```
 
 ## Project Structure
 
 ```
 llm-benchmark-elt/
-├── src/
-│   ├── __main__.py           
-│   ├── core/
-│   │   ├── config.py          
-│   │   ├── logging.py         
-│   │   └── spark_session.py  
+├── data/
 │   ├── bronze/
-│   │   └── ingest.py         
-│   └── silver/
-│       ├── transform.py       
-│       └── write_delta.py     
-├── dags/
-│   └── llm_benchmark_dag.py   
+│   ├── silver/models/
+│   └── gold/
+│       ├── model_leaderboard/
+│       └── model_trends/
+├── src/
+│   ├── __main__.py            # CLI entry point: runs full Bronze → Silver → Gold
+│   ├── core/
+│   │   ├── config.py          # paths, API config, snapshot date
+│   │   ├── logging.py         # logging setup
+│   │   └── spark_session.py   # Delta-enabled SparkSession
+│   ├── bronze/
+│   │   └── ingest.py          # API fetch, flatten, save raw
+│   ├── silver/
+│   │   ├── transform.py       # cleaning rules + column renaming
+│   │   └── write_delta.py     # Delta write + verification
+│   └── gold/
+│       ├── schemas.py         # output table schemas
+│       ├── transform.py       # leaderboard scoring + trend deltas
+│       └── write_delta.py     # schema validation + Delta write
+├── dags/                      
+│   └── llm_benchmark_dag.py   # orchestrator
+|
 ├── notebooks/
-│   └── pipeline_simulation.ipynb  
-├── data/                       
-│   ├── bronze/                 
-│   └── silver/models/          
-├── docker-compose.yml          
-├── requirements.txt           
-├── .env                     
+│   └── pipeline_simulation.ipynb
+|
+├── docker-compose.yml
+├── requirements.txt
+├── .env
 └── .gitignore
 ```
 
@@ -94,7 +108,7 @@ llm-benchmark-elt/
 Schedule: `0 0 * * *` (daily at 00:00 UTC)
 
 ```
-extract → bronze_save → silver_transform → delta_write → verify
+extract → bronze_save → silver_write → verify → gold_build → gold_quality_check
 ```
 
 Each task is isolated — if Silver fails, Bronze doesn't re-run on retry.
