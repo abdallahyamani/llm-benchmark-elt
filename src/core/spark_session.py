@@ -10,7 +10,7 @@ def get_or_create_spark() -> SparkSession:
     try:
 
         builder = (
-            SparkSession.builder.appName("LLM-Benchmark-Silver")
+            SparkSession.builder.appName("LLM-Benchmark-Pipeline")
             .master("local[*]")
             .config(
                 "spark.sql.extensions",

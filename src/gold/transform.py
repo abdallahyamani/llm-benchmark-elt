@@ -38,11 +38,13 @@ def _min_max_normalize(df: DataFrame, col_name: str, output_col: str) -> DataFra
 
 
 def _filter_scorable_models(df: DataFrame, snapshot_date: str) -> DataFrame:
-    """Filter to snapshot and keep models with at least one non-null scoring metric."""
+    """Filter to snapshot and keep models that have every scoring metric."""
     return df.filter(F.col("snapshot_date") == snapshot_date).filter(
         F.col("analysis_ai_index").isNotNull()
-        | F.col("output_tokens_per_sec").isNotNull()
-        | F.col("input_1m_price").isNotNull()
+        & F.col("output_tokens_per_sec").isNotNull()
+        & F.col("input_1m_price").isNotNull()
+        & F.col("output_1m_price").isNotNull()
+        & (((F.col("input_1m_price") + F.col("output_1m_price")) / 2.0) > 0)
     )
 
 
@@ -73,14 +75,12 @@ def _compute_normalized_scores(df: DataFrame) -> DataFrame:
     else:
         df = df.withColumn("price_norm", F.lit(50.0))
 
-    df = df.withColumn(
+    return df.withColumn(
         "composite_score",
-        F.coalesce(F.col("intelligence_norm"), F.lit(0.0)) * COMPOSITE_WEIGHTS["intelligence"]
-        + F.coalesce(F.col("speed_norm"), F.lit(0.0)) * COMPOSITE_WEIGHTS["speed"]
-        + F.coalesce(F.col("price_norm"), F.lit(0.0)) * COMPOSITE_WEIGHTS["price"],
+        F.col("intelligence_norm") * COMPOSITE_WEIGHTS["intelligence"]
+        + F.col("speed_norm") * COMPOSITE_WEIGHTS["speed"]
+        + F.col("price_norm") * COMPOSITE_WEIGHTS["price"],
     )
-
-    return df
 
 
 def _assign_composite_rank(df: DataFrame) -> DataFrame:
@@ -90,63 +90,27 @@ def _assign_composite_rank(df: DataFrame) -> DataFrame:
 
 
 def _compute_cost_efficiency(df: DataFrame) -> DataFrame:
-    """Compute cost metrics for eligible models, null for ineligible."""
-    cost_eligible = (
-        F.col("input_1m_price").isNotNull()
-        & F.col("output_1m_price").isNotNull()
-        & F.col("analysis_ai_index").isNotNull()
-        & F.col("avg_price").isNotNull()
-        & (F.col("avg_price") > 0)
-    )
-    df = df.withColumn("_cost_eligible", cost_eligible)
-
-    df = df.withColumn(
-        "avg_price_per_1m_tokens",
-        F.when(F.col("_cost_eligible"), F.col("avg_price")).otherwise(F.lit(None).cast("double")),
-    )
+    """Add cost metrics: price per 1M tokens, intelligence per dollar, tier, and efficiency rank."""
+    df = df.withColumnRenamed("avg_price", "avg_price_per_1m_tokens")
     df = df.withColumn(
         "intelligence_per_dollar",
-        F.when(F.col("_cost_eligible"), F.col("analysis_ai_index") / F.col("avg_price"))
-        .otherwise(F.lit(None).cast("double")),
+        F.col("analysis_ai_index") / F.col("avg_price_per_1m_tokens"),
     )
 
-    # Cost tier via percentile thresholds among eligible models
-    eligible_subset = df.filter(F.col("_cost_eligible"))
-    eligible_count = eligible_subset.count()
+    budget_upper, mid_upper = df.approxQuantile(
+        "avg_price_per_1m_tokens",
+        [COST_TIER_THRESHOLDS["budget"], COST_TIER_THRESHOLDS["mid"]],
+        0.01,
+    )
+    df = df.withColumn(
+        "cost_tier",
+        F.when(F.col("avg_price_per_1m_tokens") <= budget_upper, F.lit("budget"))
+        .when(F.col("avg_price_per_1m_tokens") <= mid_upper, F.lit("mid"))
+        .otherwise(F.lit("premium")),
+    )
 
-    if eligible_count > 0:
-        quantiles = eligible_subset.approxQuantile(
-            "avg_price_per_1m_tokens",
-            [COST_TIER_THRESHOLDS["budget"], COST_TIER_THRESHOLDS["mid"]],
-            0.01,
-        )
-        budget_upper = quantiles[0]
-        mid_upper = quantiles[1]
-
-        df = df.withColumn(
-            "cost_tier",
-            F.when(~F.col("_cost_eligible"), F.lit(None).cast("string"))
-            .when(F.col("avg_price_per_1m_tokens") <= budget_upper, F.lit("budget"))
-            .when(F.col("avg_price_per_1m_tokens") <= mid_upper, F.lit("mid"))
-            .otherwise(F.lit("premium")),
-        )
-    else:
-        df = df.withColumn("cost_tier", F.lit(None).cast("string"))
-
-    # Efficiency rank among eligible models only (contiguous 1..M)
-    if eligible_count > 0:
-        eff_window = Window.orderBy(F.col("intelligence_per_dollar").desc())
-        eligible_ranks = (
-            df.filter(F.col("_cost_eligible"))
-            .select("model_id", "intelligence_per_dollar")
-            .withColumn("efficiency_rank", F.row_number().over(eff_window))
-            .select("model_id", "efficiency_rank")
-        )
-        df = df.join(eligible_ranks, on="model_id", how="left")
-    else:
-        df = df.withColumn("efficiency_rank", F.lit(None).cast("int"))
-
-    return df
+    eff_window = Window.orderBy(F.col("intelligence_per_dollar").desc())
+    return df.withColumn("efficiency_rank", F.row_number().over(eff_window))
 
 
 def _select_ranking_columns(df: DataFrame) -> DataFrame:
