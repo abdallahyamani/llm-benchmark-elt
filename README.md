@@ -1,6 +1,6 @@
 # LLM Benchmark ELT
 
-A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial Analysis API, stores raw snapshots in a Bronze layer, produces a cleaned Delta Lake Silver table, and builds Gold analytics tables (a scored model leaderboard and snapshot-over-snapshot trends). Orchestrated with Apache Airflow.
+A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial Analysis API, stores raw snapshots in a Bronze layer, produces a cleaned Delta Lake Silver table, and builds Gold analytics tables (a scored model leaderboard and snapshot-over-snapshot trends). Scheduled daily via GitHub Actions.
 
 ## How It Works
 
@@ -117,8 +117,6 @@ The pipeline runs daily via **GitHub Actions** — no local machine or cloud inf
 2. Name: `LLM_BENCHMARK_API`, Value: your API key
 3. Settings → Actions → General → Workflow permissions → "Read and write permissions"
 
-The Airflow DAG (`dags/llm_benchmark_dag.py`) remains in the repo as a production-ready orchestration definition — it demonstrates the task dependency graph for environments that use Airflow.
-
 ## Project Structure
 
 ```
@@ -146,8 +144,6 @@ llm-benchmark-elt/
 │       ├── schemas.py         # output table schemas
 │       ├── transform.py       # leaderboard scoring + trend deltas
 │       └── write_delta.py     # schema validation + Delta write
-├── dags/
-│   └── llm_benchmark_dag.py   # Airflow DAG (alternative orchestrator)
 ├── scripts/
 │   └── gold_results.py        # generates chart + updates README
 ├── notebooks/
@@ -157,23 +153,13 @@ llm-benchmark-elt/
 └── .gitignore
 ```
 
-## Airflow DAG
-Schedule: `0 0 * * *` (daily at 00:00 UTC)
-
-```
-extract → bronze_save → silver_write → verify → gold_build → gold_quality_check
-```
-
-Each task is isolated — if Silver fails, Bronze doesn't re-run on retry.
-
 ## Tech Stack
 
 - Python 3.11
 - PySpark 3.5 + Delta Spark
 - deltalake (delta-rs) for writes
-- pandas + pyarrow
+- pandas + pyarrow + matplotlib
 - GitHub Actions (daily scheduling)
-- Apache Airflow 2.9 (DAG definition)
 
 ## Latest Results
 
