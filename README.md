@@ -4,9 +4,28 @@ A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial
 
 ## How It Works
 
-Airflow triggers daily at midnight UTC → extracts model data (intelligence scores, latency, pricing) from the API → saves raw JSON + flattened Parquet to Bronze → PySpark applies cleaning rules (dedup, type casting, zero-to-null for sentinel values, column renaming) → writes to a partitioned Delta Lake Silver table → verifies row counts and partition integrity → builds Gold analytics tables (model leaderboard + trends) → runs a sanity check on the Gold output.
+```mermaid
+graph LR
+    A[Artificial Analysis API] -->|fetch| B[Bronze]
+    B -->|PySpark transform| C[Silver]
+    C -->|score & rank| D[Gold]
 
-Each pipeline run captures a daily snapshot. Delta Lake preserves historical snapshots with partition-scoped overwrites and time travel.
+    subgraph Bronze
+        B1[raw JSON] --> B2[flattened Parquet]
+    end
+
+    subgraph Silver
+        C1[dedup + type cast + sentinel→null + rename columns]
+        C2[Delta Lake table partitioned by snapshot_date]
+    end
+
+    subgraph Gold
+        D1[model_leaderboard — ranked by composite score]
+        D2[model_trends — metric deltas across snapshots]
+    end
+```
+
+The pipeline runs daily via GitHub Actions. Each run captures a snapshot, cleans it, scores all models, and writes the results to Delta Lake. Historical snapshots accumulate over time — the trends table tracks how models change across days.
 
 ## Data Source
 
@@ -20,7 +39,18 @@ Each pipeline run captures a daily snapshot. Delta Lake preserves historical sna
 | Silver | `data/silver/models/` | Delta Lake table partitioned by `snapshot_date`, cleaned and typed |
 | Gold | `data/gold/model_leaderboard/`, `data/gold/model_trends/` | Delta Lake analytics tables partitioned by `snapshot_date` |
 
-### Gold Tables
+### Silver — What Gets Cleaned
+
+| Rule | Raw (Bronze) | Cleaned (Silver) |
+|------|-------------|-----------------|
+| Deduplication | Same model can appear multiple times per snapshot | One row per model per snapshot |
+| Date casting | `release_date`, `snapshot_date` as strings | Proper date types |
+| Numeric casting | Pricing columns as mixed types | All cast to double |
+| Sentinel → null | Speed = 0.0 means "not measured" | Replace 0.0 with null (honest missing data) |
+| Drop unusable | Rows with null model_id or model_slug | Removed — can't identify the model |
+| Column renaming | `model_slug`, `creator_slug`, `eval_artificial_analysis_intelligence_index`, `median_output_tokens_per_second`, `price_1m_input_tokens`, `price_1m_output_tokens` | `model_name`, `vendor`, `analysis_ai_index`, `output_tokens_per_sec`, `input_1m_price`, `output_1m_price` |
+
+### Gold — What Gets Computed
 
 - **`model_leaderboard`** — one row per model for the snapshot, ranked by a composite score that blends intelligence (50%), speed (30%), and price (20%) after min-max normalization. Also includes cost-efficiency columns: average price per 1M tokens, intelligence-per-dollar, a cost tier (budget / mid / premium based on price percentiles), and an efficiency rank. Only models with all scoring metrics present are ranked.
 - **`model_trends`** — per-model metric deltas (intelligence, speed, price) between each snapshot and the immediately preceding one, with both current and previous values retained for context.
@@ -72,16 +102,28 @@ Notebook (interactive):
 jupyter notebook notebooks/pipeline_simulation.ipynb
 ```
 
-Airflow (daily scheduled):
-```bash
-docker compose up airflow-init   # one-time: migrate DB + create admin user
-docker compose up -d             # start webserver + scheduler
-```
+## Scheduling
+
+The pipeline runs daily via **GitHub Actions** — no local machine or cloud infrastructure needed.
+
+- Triggers automatically at midnight UTC
+- Can also be triggered manually from the Actions tab ("Run workflow")
+- New data is committed back to the repo, accumulating daily snapshots
+- Gold tables are uploaded as downloadable artifacts (retained 30 days)
+
+**Setup:**
+1. Go to repo Settings → Secrets → Actions → New repository secret
+2. Name: `LLM_BENCHMARK_API`, Value: your API key
+3. Settings → Actions → General → Workflow permissions → "Read and write permissions"
+
+The Airflow DAG (`dags/llm_benchmark_dag.py`) remains in the repo as a production-ready orchestration definition — it demonstrates the task dependency graph for environments that use Airflow.
 
 ## Project Structure
 
 ```
 llm-benchmark-elt/
+├── .github/workflows/
+│   └── daily_pipeline.yml     # GitHub Actions daily schedule
 ├── data/
 │   ├── bronze/
 │   ├── silver/models/
@@ -103,20 +145,16 @@ llm-benchmark-elt/
 │       ├── schemas.py         # output table schemas
 │       ├── transform.py       # leaderboard scoring + trend deltas
 │       └── write_delta.py     # schema validation + Delta write
-├── dags/                      
-│   └── llm_benchmark_dag.py   # orchestrator
-|
+├── dags/
+│   └── llm_benchmark_dag.py   # Airflow DAG (alternative orchestrator)
 ├── notebooks/
 │   └── pipeline_simulation.ipynb
-|
-├── docker-compose.yml
 ├── requirements.txt
 ├── .env
 └── .gitignore
 ```
 
 ## Airflow DAG
-
 Schedule: `0 0 * * *` (daily at 00:00 UTC)
 
 ```
@@ -131,5 +169,5 @@ Each task is isolated — if Silver fails, Bronze doesn't re-run on retry.
 - PySpark 3.5 + Delta Spark
 - deltalake (delta-rs) for writes
 - pandas + pyarrow
-- Apache Airflow 2.9
-- Docker Compose
+- GitHub Actions (daily scheduling)
+- Apache Airflow 2.9 (DAG definition)

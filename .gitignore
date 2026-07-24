@@ -1,5 +1,7 @@
 .env
-data/
+data/bronze/*.json
+data/silver/_staging/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+.kiro
