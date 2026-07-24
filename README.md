@@ -148,6 +148,8 @@ llm-benchmark-elt/
 │       └── write_delta.py     # schema validation + Delta write
 ├── dags/
 │   └── llm_benchmark_dag.py   # Airflow DAG (alternative orchestrator)
+├── scripts/
+│   └── gold_results.py        # generates chart + updates README
 ├── notebooks/
 │   └── pipeline_simulation.ipynb
 ├── requirements.txt
@@ -172,3 +174,9 @@ Each task is isolated — if Silver fails, Bronze doesn't re-run on retry.
 - pandas + pyarrow
 - GitHub Actions (daily scheduling)
 - Apache Airflow 2.9 (DAG definition)
+
+## Latest Results
+
+<!-- RESULTS_START -->
+*Chart will appear after the first daily run accumulates data.*
+<!-- RESULTS_END -->
