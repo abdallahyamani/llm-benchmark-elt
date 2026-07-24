@@ -178,5 +178,7 @@ Each task is isolated — if Silver fails, Bronze doesn't re-run on retry.
 ## Latest Results
 
 <!-- RESULTS_START -->
-*Chart will appear after the first daily run accumulates data.*
+![Leaderboard](docs/leaderboard.png)
+
+*Last updated: 2026-07-24*
 <!-- RESULTS_END -->
