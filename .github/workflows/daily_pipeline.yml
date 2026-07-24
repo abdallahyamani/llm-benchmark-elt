@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -47,5 +49,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/ docs/ README.md
           git diff --cached --quiet || git commit -m "data: daily snapshot $(date -u +%Y-%m-%d)"
-          git pull --rebase
+          git fetch origin main
+          git rebase origin/main
           git push
