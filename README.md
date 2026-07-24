@@ -5,27 +5,28 @@ A daily ELT pipeline that ingests LLM performance benchmarks from the Artificial
 ## How It Works
 
 ```mermaid
-graph LR
-    A[Artificial Analysis API] -->|fetch| B[Bronze]
-    B -->|PySpark transform| C[Silver]
-    C -->|score & rank| D[Gold]
+flowchart TD
+    API(["Artificial Analysis API"])
 
-    subgraph Bronze
-        B1[raw JSON] --> B2[flattened Parquet]
+    API -->|"fetch 500+ LLMs becnhmark daily"| BRONZE
+    BRONZE -->|"clean & standardize"| SILVER
+    SILVER -->|"score & compare"| GOLD
+
+    subgraph BRONZE ["Bronze"]
+        B["Raw data"]
     end
 
-    subgraph Silver
-        C1[dedup + type cast + sentinel→null + rename columns]
-        C2[Delta Lake table partitioned by snapshot_date]
+    subgraph SILVER ["Silver"]
+        S["Deduplicated, typed, partitioned Delta table"]
     end
 
-    subgraph Gold
-        D1[model_leaderboard — ranked by composite score]
-        D2[model_trends — metric deltas across snapshots]
+    subgraph GOLD ["Gold"]
+        G1["model Leaderboard — best LLM by score"]
+        G2["model Trends — how models change over time"]
     end
 ```
 
-The pipeline runs daily via GitHub Actions. Each run captures a snapshot, cleans it, scores all models, and writes the results to Delta Lake. Historical snapshots accumulate over time — the trends table tracks how models change across days.
+The pipeline runs daily via GitHub Actions. Each run captures a snapshot, cleans it, scores all models, and writes the results to Delta Lake. Historical snapshots accumulate — the trends table tracks how models change over time.
 
 ## Data Source
 
