@@ -26,13 +26,24 @@ def write_to_delta(df: DataFrame, silver_dir: Path, partition_col: str = "snapsh
             schema=spark_to_arrow_schema(df.schema),
             preserve_index=False,
         )
-        write_deltalake(
-            table_path,
-            arrow_table,
-            mode="overwrite",
-            schema_mode="overwrite",
-            partition_by=[partition_col],
-        )
+
+        table_path_obj = Path(table_path)
+        if table_path_obj.exists() and (table_path_obj / "_delta_log").exists():
+            write_deltalake(
+                table_path,
+                arrow_table,
+                mode="overwrite",
+                predicate=f"{partition_col} = '{df.select(partition_col).first()[0]}'",
+                schema_mode="overwrite",
+            )
+        else:
+            write_deltalake(
+                table_path,
+                arrow_table,
+                mode="overwrite",
+                schema_mode="overwrite",
+                partition_by=[partition_col],
+            )
     except Exception as exc:
         raise RuntimeError(
             f"Silver write failed — path: {table_path}, cause: {exc}"

@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pandas as pd
 from deltalake import DeltaTable
 
@@ -47,8 +48,11 @@ def generate_chart(df: pd.DataFrame) -> Path:
     ax.set_title("Top 5 LLM Models — Composite Score Over Time")
     ax.legend(loc="lower right", fontsize=8)
     ax.set_ylim(0, 100)
+    ax.set_xlim(snapshots[0], snapshots[-1])
     ax.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    fig.autofmt_xdate()
     plt.tight_layout()
     plt.savefig(chart_path, dpi=150)
     plt.close()

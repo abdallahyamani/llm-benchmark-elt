@@ -75,13 +75,30 @@ def write_gold_table(
             schema=spark_to_arrow_schema(df.schema),
             preserve_index=False,
         )
-        write_deltalake(
-            table_path,
-            arrow_table,
-            mode="overwrite",
-            schema_mode="overwrite",
-            partition_by=[partition_col],
-        )
+
+        table_path_obj = Path(table_path)
+        if table_path_obj.exists() and (table_path_obj / "_delta_log").exists():
+            # Table exists — overwrite only today's partition, preserve history
+            snapshot_dates = df.select(partition_col).distinct().collect()
+            predicate = " OR ".join(
+                f"{partition_col} = '{row[0]}'" for row in snapshot_dates
+            )
+            write_deltalake(
+                table_path,
+                arrow_table,
+                mode="overwrite",
+                predicate=predicate,
+                schema_mode="overwrite",
+            )
+        else:
+            # First write — create the table with partitioning
+            write_deltalake(
+                table_path,
+                arrow_table,
+                mode="overwrite",
+                schema_mode="overwrite",
+                partition_by=[partition_col],
+            )
     except Exception as exc:
         logger.error("Gold write failed — %s: %s", table_name, exc)
         raise
