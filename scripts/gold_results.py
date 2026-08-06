@@ -50,7 +50,7 @@ def generate_chart(df: pd.DataFrame) -> Path:
     ax.set_ylim(0, 100)
     ax.set_xlim(snapshots[0], snapshots[-1])
     ax.grid(True, alpha=0.3)
-    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     fig.autofmt_xdate()
     plt.tight_layout()
