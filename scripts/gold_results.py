@@ -29,9 +29,12 @@ def generate_chart(df: pd.DataFrame) -> Path:
 
     snapshots = sorted(df["snapshot_date"].unique())
 
-    # Get today's top 5 models
-    latest = df[df["snapshot_date"] == snapshots[-1]]
-    top_models = latest.nsmallest(5, "rank")["model_name"].tolist()
+    # Get all models that have ever been in the top 5 on any snapshot
+    top_models = set()
+    for snapshot in snapshots:
+        snapshot_df = df[df["snapshot_date"] == snapshot].nsmallest(5, "rank")
+        top_models.update(snapshot_df["model_name"].tolist())
+    top_models = list(top_models)
 
     # Filter to just those models across all snapshots
     top_df = df[df["model_name"].isin(top_models)]
@@ -45,7 +48,7 @@ def generate_chart(df: pd.DataFrame) -> Path:
 
     ax.set_xlabel("Snapshot Date")
     ax.set_ylabel("Composite Score")
-    ax.set_title("Top 5 LLM Models — Composite Score Over Time")
+    ax.set_title("Top LLM Models — Composite Score Over Time")
     ax.legend(loc="lower right", fontsize=8)
     ax.set_ylim(0, 100)
     ax.set_xlim(snapshots[0], snapshots[-1])
