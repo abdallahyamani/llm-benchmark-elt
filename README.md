@@ -166,5 +166,5 @@ llm-benchmark-elt/
 <!-- RESULTS_START -->
 ![Leaderboard](docs/leaderboard.png)
 
-*Last updated: 2026-09-15*
+*Last updated: 2026-09-16*
 <!-- RESULTS_END -->
